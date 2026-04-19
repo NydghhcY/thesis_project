@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统鉴权 - Spark Cerebro</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* --- 全局样式设定 (Apple 规范) --- */
+        :root {
+            --bg-base: #F2F2F7;
+            --bg-glass: rgba(255, 255, 255, 0.65);
+            --border-glass: rgba(255, 255, 255, 0.8);
+            
+            --text-primary: #1C1C1E;
+            --text-secondary: #8E8E93;
+            
+            --accent-blue: #007AFF;
+            --accent-blue-hover: #0056b3;
+            --accent-blue-bg: rgba(0, 122, 255, 0.15);
+            --apple-green: #34C759;
+            
+            --error-red: #FF3B30;
+            --error-bg: rgba(255, 59, 48, 0.08); /* 柔和的错误背景 */
+            
+            --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Segoe UI", Roboto, sans-serif;
+            --shadow-glass: 0 20px 60px rgba(0, 0, 0, 0.08);
+            --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            font-family: var(--font-stack);
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            overflow: hidden; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            perspective: 1000px; /* ✨ 开启 3D 透视视角 */
+        }
+
+        /* --- 交互式极光背景 (强制全屏修复版) --- */
+        .ambient-bg {
+            position: fixed; /* 修复两侧留白：固定在视口上 */
+            top: 0; left: 0; 
+            width: 100vw; height: 100vh;
+            overflow: hidden;
+            z-index: -1;
+            pointer-events: none; /* 防止遮挡交互 */
+        }
+        .orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.6;
+            transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            will-change: transform;
+        }
+        .orb-1 { width: 600px; height: 600px; background: rgba(0, 122, 255, 0.3); top: -10%; left: -10%; }
+        .orb-2 { width: 500px; height: 500px; background: rgba(52, 199, 89, 0.2); bottom: -5%; right: -5%; }
+        .orb-3 { width: 400px; height: 400px; background: rgba(175, 82, 222, 0.2); top: 40%; left: 60%; }
+
+        /* --- 3D 倾斜包装器 --- */
+        .tilt-wrapper {
+            transition: transform 0.1s ease-out;
+            transform-style: preserve-3d;
+            will-change: transform;
+        }
+
+        /* --- 主容器 (重度亚克力玻璃质感) --- */
+        .auth-container {
+            position: relative;
+            width: 420px;
+            padding: 48px 40px;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: 28px;
+            backdrop-filter: blur(40px) saturate(200%);
+            -webkit-backdrop-filter: blur(40px) saturate(200%);
+            box-shadow: var(--shadow-glass), inset 0 0 0 1px rgba(255,255,255,0.5);
+            z-index: 1;
+            box-sizing: border-box;
+            transform: translateZ(30px); /* ✨ 卡片在 3D 空间浮起 */
+        }
+
+        /* --- 头部标题 --- */
+        .auth-header {
+            text-align: center;
+            margin-bottom: 36px;
+            transform: translateZ(20px); /* ✨ 标题进一步悬浮 */
+        }
+
+        .auth-header i.title-icon {
+            font-size: 42px;
+            background: linear-gradient(135deg, #007AFF, #5AC8FA);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 16px;
+            filter: drop-shadow(0 4px 10px rgba(0, 122, 255, 0.2));
+        }
+
+        .auth-header h2 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: var(--text-primary);
+        }
+
+        .toggle-group {
+            display: flex;
+            justify-content: center;
+            margin-top: 28px;
+            border-bottom: 1px solid rgba(0,0,0,0.08);
+        }
+
+        .toggle-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            padding: 10px 24px;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            font-family: inherit;
+        }
+
+        .toggle-btn:hover { color: var(--text-primary); }
+        .toggle-btn.active { color: var(--text-primary); font-weight: 600; }
+
+        .toggle-btn.active::after {
+            content: "";
+            position: absolute;
+            bottom: -1px;
+            left: 20%;
+            width: 60%;
+            height: 3px;
+            border-radius: 3px 3px 0 0;
+            background-color: var(--accent-blue);
+        }
+
+        /* --- 表单输入区域 --- */
+        .form-box { display: none; }
+        .form-box.active {
+            display: block;
+            animation: formFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .input-group {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .input-group i.left-icon {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            transition: all 0.3s;
+            font-size: 14px;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* ✨ 1. 密码可见性小眼睛图标 */
+        .input-group i.pwd-toggle {
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            transition: color 0.3s ease;
+            font-size: 15px;
+            z-index: 5;
+            cursor: pointer;
+            padding: 5px;
+        }
+        .input-group i.pwd-toggle:hover { color: var(--text-primary); }
+        .input-group i.pwd-toggle.active { color: var(--accent-blue); }
+
+        .input-group input {
+            width: 100%;
+            padding: 14px 44px 14px 44px; /* 为左右图标都留出空间 */
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 14px;
+            color: var(--text-primary);
+            font-family: var(--font-stack);
+            font-size: 15px;
+            box-sizing: border-box;
+            box-shadow: var(--shadow-input);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .input-group input:focus {
+            outline: none;
+            background: #ffffff;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 4px var(--accent-blue-bg), var(--shadow-input);
+        }
+
+        .input-group input:focus ~ i.left-icon, .input-group input:valid ~ i.left-icon {
+            color: var(--accent-blue);
+        }
+        .input-group input::placeholder { color: #A1A1A6; font-weight: 400; }
+
+        /* ✨ 2. iOS 风格拨动开关 (纯 CSS) */
+        .remember-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding: 0 4px;
+        }
+        .remember-text {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+        .ios-switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+        .ios-switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute; cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.1);
+            transition: .3s ease-in-out;
+            border-radius: 24px;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .slider:before {
+            position: absolute; content: "";
+            height: 20px; width: 20px;
+            left: 2px; bottom: 2px;
+            background-color: white;
+            transition: .3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2), 0 0 1px rgba(0,0,0,0.1);
+        }
+        .ios-switch input:checked + .slider { background-color: var(--apple-green); }
+        .ios-switch input:checked + .slider:before { transform: translateX(20px); }
+
+        /* --- 提交按钮与 Loading --- */
+        .btn-submit {
+            position: relative;
+            width: 100%;
+            padding: 14px;
+            background: var(--accent-blue);
+            border: none;
+            border-radius: 14px;
+            color: #ffffff;
+            font-family: var(--font-stack);
+            font-size: 16px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 4px 14px rgba(0, 122, 255, 0.25);
+            overflow: hidden;
+        }
+
+        .btn-submit:hover:not(.loading) {
+            background: var(--accent-blue-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 122, 255, 0.35);
+        }
+        
+        .btn-submit:active:not(.loading) {
+            transform: scale(0.97);
+            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
+        }
+
+        /* ✨ 3. Loading 光圈样式 */
+        .btn-submit .btn-text { transition: opacity 0.2s; }
+        .btn-submit.loading {
+            cursor: not-allowed;
+            background: var(--accent-blue-hover);
+            transform: scale(0.98);
+            box-shadow: none;
+        }
+        .btn-submit.loading .btn-text { opacity: 0; }
+        .btn-submit .spinner {
+            position: absolute;
+            left: 50%; top: 50%;
+            width: 20px; height: 20px;
+            margin-left: -10px; margin-top: -10px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 0.8s linear infinite;
+            opacity: 0; visibility: hidden;
+            transition: opacity 0.2s;
+        }
+        .btn-submit.loading .spinner { opacity: 1; visibility: visible; }
+
+        /* --- ✨ 柔和的 Flask 消息提示 --- */
+        .flash-messages {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 24px 0;
+            text-align: center;
+        }
+
+        .flash-message {
+            background: var(--error-bg);
+            color: var(--error-red);
+            border: none;
+            padding: 10px 16px;
+            border-radius: 20px; /* 胶囊形状 */
+            font-size: 13.5px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            animation: formFadeIn 0.3s ease, shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+            box-shadow: 0 2px 8px rgba(255, 59, 48, 0.05);
+        }
+
+        /* --- 动画 --- */
+        @keyframes formFadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ambient-bg" id="ambientBg">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <div class="tilt-wrapper" id="tiltWrapper">
+        <div class="auth-container">
+            <div class="auth-header">
+                <i class="fas fa-brain title-icon"></i>
+                <h2>Spark Cerebro 平台</h2>
+                
+                <div class="toggle-group">
+                    <button class="toggle-btn active" id="show-login">安全登录</button>
+                    <button class="toggle-btn" id="show-register">系统注册</button>
+                </div>
+            </div>
+
+            {% with messages = get_flashed_messages() %}
+              {% if messages %}
+                <ul class="flash-messages">
+                {% for message in messages %}
+                  <li class="flash-message"><i class="fas fa-exclamation-circle"></i> {{ message }}</li>
+                {% endfor %}
+                </ul>
+              {% endif %}
+            {% endwith %}
+
+            <div class="form-box active" id="login-box">
+                <form method="POST" action="{{ url_for('login') }}" onsubmit="showLoading(this)">
+                    <div class="input-group">
+                        <input type="text" name="username" placeholder="管理员用户名" required>
+                        <i class="fas fa-user left-icon"></i>
+                    </div>
+                    <div class="input-group">
+                        <input type="password" name="password" id="login-pwd" placeholder="密码" required>
+                        <i class="fas fa-lock left-icon"></i>
+                        <i class="fas fa-eye-slash pwd-toggle" onclick="togglePassword('login-pwd', this)" title="显示/隐藏密码"></i>
+                    </div>
+                    
+                    <div class="remember-container">
+                        <span class="remember-text">保持登录状态</span>
+                        <label class="ios-switch">
+                            <input type="checkbox" name="remember" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn-submit">
+                        <span class="btn-text">进 入 中 枢</span>
+                        <div class="spinner"></div>
+                    </button>
+                </form>
+            </div>
+
+            <div class="form-box" id="register-box">
+                <form method="POST" action="{{ url_for('register') }}" onsubmit="showLoading(this)">
+                    <div class="input-group">
+                        <input type="text" name="username" placeholder="设置管理员账号" required>
+                        <i class="fas fa-user-plus left-icon"></i>
+                    </div>
+                    <div class="input-group">
+                        <input type="password" name="password" id="reg-pwd" placeholder="设置密码 (高强度哈希加密)" required>
+                        <i class="fas fa-key left-icon"></i>
+                        <i class="fas fa-eye-slash pwd-toggle" onclick="togglePassword('reg-pwd', this)" title="显示/隐藏密码"></i>
+                    </div>
+                    <button type="submit" class="btn-submit">
+                        <span class="btn-text">创 建 账 号</span>
+                        <div class="spinner"></div>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 表单切换逻辑 ---
+        const showLoginBtn = document.getElementById('show-login');
+        const showRegisterBtn = document.getElementById('show-register');
+        const loginBox = document.getElementById('login-box');
+        const registerBox = document.getElementById('register-box');
+
+        showLoginBtn.addEventListener('click', () => {
+            showLoginBtn.classList.add('active');
+            showRegisterBtn.classList.remove('active');
+            loginBox.classList.add('active');
+            registerBox.classList.remove('active');
+        });
+
+        showRegisterBtn.addEventListener('click', () => {
+            showRegisterBtn.classList.add('active');
+            showLoginBtn.classList.remove('active');
+            registerBox.classList.add('active');
+            loginBox.classList.remove('active');
+        });
+
+        // --- 密码可见性切换 ---
+        function togglePassword(inputId, iconEl) {
+            const input = document.getElementById(inputId);
+            if (input.type === 'password') {
+                input.type = 'text';
+                iconEl.classList.replace('fa-eye-slash', 'fa-eye');
+                iconEl.classList.add('active');
+            } else {
+                input.type = 'password';
+                iconEl.classList.replace('fa-eye', 'fa-eye-slash');
+                iconEl.classList.remove('active');
+            }
+        }
+
+        // --- 按钮 Loading 状态防止重复提交 ---
+        function showLoading(formEl) {
+            const btn = formEl.querySelector('.btn-submit');
+            btn.classList.add('loading');
+            // 设置微小延迟确保表单数据成功提交出去，然后再禁用按钮
+            setTimeout(() => { btn.disabled = true; }, 10);
+        }
+
+        // --- 极致交互：鼠标律动视差 + 卡片 3D 微倾斜 ---
+        const tiltWrapper = document.getElementById('tiltWrapper');
+        let requestRef;
+
+        document.addEventListener('mousemove', function(e) {
+            // 计算鼠标位置系数 (-1 到 1)
+            const x = (e.clientX / window.innerWidth - 0.5) * 2;
+            const y = (e.clientY / window.innerHeight - 0.5) * 2;
+
+            // 背景光晕跟随
+            document.querySelectorAll('.orb').forEach((orb, index) => {
+                const speed = (index + 1) * 30; 
+                orb.style.transform = `translate(${x * speed}px, ${y * speed}px)`;
+            });
+
+            // 玻璃卡片微重力倾斜 (限制在 ±2.5 度，保持克制高级感)
+            if (requestRef) cancelAnimationFrame(requestRef);
+            requestRef = requestAnimationFrame(() => {
+                const rotateY = x * 2.5; 
+                const rotateX = -y * 2.5; 
+                tiltWrapper.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+            });
+        });
+
+        // 鼠标离开窗口恢复平级
+        document.addEventListener('mouseleave', () => {
+            tiltWrapper.style.transform = `rotateX(0deg) rotateY(0deg)`;
+        });
+    </script>
+</body>
+</html>

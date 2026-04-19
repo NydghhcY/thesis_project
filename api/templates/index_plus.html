@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spark 数据推演中枢</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <style>
+        /* ✨ 全局动态 CSS 变量控制枢纽 */
+        :root {
+            --sidebar-width: 260px;
+            --insight-width: 400px;
+            --radius-lg: 24px;
+            --radius-md: 16px;
+            --radius-sm: 12px;
+
+            /* 🍎 Light Mode (明亮模式) */
+            --bg-base: #F2F2F7;
+            --bg-glass: rgba(255, 255, 255, 0.7);
+            --bg-glass-heavy: rgba(242, 242, 247, 0.5);
+            --bg-focus: #ffffff;
+            --border-glass: rgba(255, 255, 255, 0.6);
+            --border-solid: rgba(0, 0, 0, 0.05);
+            
+            --text-primary: #2C2C2E; 
+            --text-secondary: #8E8E93;
+            --text-title: #1C1C1E;
+            --title-gradient: linear-gradient(135deg, #000000 0%, #8E8E93 100%);
+            
+            --hover-bg: rgba(0, 0, 0, 0.03);
+            --card-hover-bg: #ffffff;
+            --tag-bg: rgba(255, 255, 255, 0.8);
+            --overlay-bg: rgba(0, 0, 0, 0.2);
+            
+            --fp-glass-bg: rgba(255, 255, 255, 0.4);
+            --fp-glass-inset: rgba(255, 255, 255, 0.6);
+            --drawer-bg: rgba(255, 255, 255, 0.85);
+            --btn-export-bg: #ffffff;
+            --skeleton-1: #f0f0f0;
+            --skeleton-2: #e0e0e0;
+            --timeline-bg: rgba(255, 255, 255, 0.7);
+            
+            --aurora-1: rgba(0, 122, 255, 0.06);
+            --aurora-2: rgba(52, 199, 89, 0.04);
+            --aurora-3: rgba(255, 149, 0, 0.03);
+            
+            --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.06);
+            --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.03);
+
+            /* 品牌色 (通用) */
+            --accent: #007AFF;
+            --accent-bg: rgba(0, 122, 255, 0.15);
+            --error-red: #FF3B30;
+            --error-bg: rgba(255, 59, 48, 0.08);
+            --apple-green: #34C759;
+            --apple-orange: #FF9500;
+            --apple-purple: #AF52DE;
+            
+            --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Segoe UI", Roboto, sans-serif;
+        }
+
+        /* 🌌 Dark Mode (暗黑宇宙模式) */
+        [data-theme="dark"] {
+            --bg-base: #000000;
+            --bg-glass: rgba(28, 28, 30, 0.7);
+            --bg-glass-heavy: rgba(28, 28, 30, 0.6);
+            --bg-focus: #1C1C1E;
+            --border-glass: rgba(255, 255, 255, 0.1);
+            --border-solid: rgba(255, 255, 255, 0.08);
+            
+            --text-primary: #F5F5F7; 
+            --text-secondary: #A1A1A6;
+            --text-title: #FFFFFF;
+            --title-gradient: linear-gradient(135deg, #FFFFFF 0%, #8E8E93 100%);
+            
+            --hover-bg: rgba(255, 255, 255, 0.08);
+            --card-hover-bg: #1C1C1E;
+            --tag-bg: rgba(44, 44, 46, 0.8);
+            --overlay-bg: rgba(0, 0, 0, 0.6);
+            
+            --fp-glass-bg: rgba(28, 28, 30, 0.4);
+            --fp-glass-inset: rgba(255, 255, 255, 0.08);
+            --drawer-bg: rgba(28, 28, 30, 0.85);
+            --btn-export-bg: #2C2C2E;
+            --skeleton-1: #2C2C2E;
+            --skeleton-2: #3A3A3C;
+            --timeline-bg: rgba(44, 44, 46, 0.8);
+            
+            --aurora-1: rgba(0, 122, 255, 0.15);
+            --aurora-2: rgba(52, 199, 89, 0.12);
+            --aurora-3: rgba(175, 82, 222, 0.12); 
+            
+            --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.4);
+            --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.3);
+        }
+
+        /* ---------------- 基础布局样式 ---------------- */
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: var(--font-stack); background-color: var(--bg-base); background-image: radial-gradient(circle at 10% 10%, var(--aurora-1) 0%, transparent 40%), radial-gradient(circle at 90% 90%, var(--aurora-2) 0%, transparent 40%), radial-gradient(circle at 50% 50%, var(--aurora-3) 0%, transparent 50%); color: var(--text-primary); overflow: hidden; -webkit-font-smoothing: antialiased; transition: background-color 0.4s ease, color 0.4s ease; }
+        .glass-effect { background: var(--bg-glass); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); border: 1px solid var(--border-glass); box-shadow: var(--shadow-glass); }
+        .app-container { display: flex; height: 100vh; width: 100vw; }
+        
+        .sidebar { width: 260px; background: var(--bg-glass-heavy); backdrop-filter: saturate(180%) blur(20px); margin: 24px 0 24px 24px; border: 1px solid var(--border-glass); border-radius: var(--radius-lg); display: flex; flex-direction: column; padding: 32px 16px; z-index: 10; box-sizing: border-box; box-shadow: var(--shadow-glass); transition: all 0.4s ease; }
+        .sidebar-header { padding: 0 16px 40px; font-size: 1.1rem; font-weight: 600; color: var(--text-title); letter-spacing: 0.5px; display: flex; align-items: center; }
+        .sidebar-header i { color: var(--accent); margin-right: 12px; font-size: 1.3rem; }
+        
+        .nav-item { padding: 12px 16px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s ease; color: var(--text-secondary); border-radius: 12px; font-size: 0.95rem; font-weight: 500; display: flex; align-items: center; gap: 12px; }
+        .nav-item i { width: 20px; text-align: center; font-size: 1.1rem; }
+        .nav-item:hover { background: var(--hover-bg); color: var(--text-primary); }
+        .nav-item.active { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3); font-weight: 600;}
+
+        .theme-toggle-box { margin-top: auto; margin-bottom: 8px; display: flex; align-items: center; gap: 12px; }
+        .ios-switch { position: relative; display: inline-block; width: 40px; height: 22px; margin-left: auto;}
+        .ios-switch input { opacity: 0; width: 0; height: 0; }
+        .ios-switch .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--border-solid); transition: .3s; border-radius: 22px; }
+        [data-theme="dark"] .ios-switch .slider { background-color: rgba(255,255,255,0.2); }
+        .ios-switch .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 2px; bottom: 2px; background-color: white; transition: .3s cubic-bezier(0.34, 1.56, 0.64, 1); border-radius: 50%; box-shadow: var(--shadow-sm); }
+        .ios-switch input:checked + .slider { background-color: var(--accent); }
+        .ios-switch input:checked + .slider:before { transform: translateX(18px); }
+
+        .nav-item.logout-btn { color: var(--error-red); text-decoration: none; margin-top: 0; }
+        .nav-item.logout-btn:hover { background: var(--error-bg); color: var(--error-red); }
+
+        .main-content { flex: 1; overflow-y: auto; padding: 40px 48px; position: relative; scroll-behavior: smooth; }
+        .content-section { display: none; opacity: 0; transform: translateY(8px); transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        .content-section.active { display: block; opacity: 1; transform: translateY(0); }
+        
+        h2.page-title { font-size: 1.85rem; font-weight: 800; margin: 0 0 32px 0; letter-spacing: -0.5px; display: flex; align-items: center; position: relative; padding-left: 18px; background: var(--title-gradient); -webkit-background-clip: text !important; background-clip: text !important; -webkit-text-fill-color: transparent !important; color: transparent !important; transition: all 0.4s ease; }
+        h2.page-title::before { content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 5px; height: 24px; background: linear-gradient(180deg, #007AFF, #5AC8FA); border-radius: 6px; box-shadow: 0 2px 10px rgba(0, 122, 255, 0.35); }
+        h2.page-title span.sub-text { font-size: 0.95rem; font-weight: 500; margin-left: 16px; background: none; -webkit-text-fill-color: var(--text-secondary) !important; color: var(--text-secondary) !important; letter-spacing: normal; }
+
+        .search-container { position: absolute; top: 32px; right: 48px; z-index: 100; display: flex; align-items: center; gap: 12px; }
+        .kbd-hint { font-size: 0.8rem; color: var(--text-secondary); background: var(--bg-glass); border: 1px solid var(--border-glass); padding: 4px 8px; border-radius: 6px; box-shadow: var(--shadow-sm); pointer-events: none; transition: all 0.4s ease;}
+        .search-box { position: relative; }
+        .search-box input { background: var(--bg-glass); backdrop-filter: saturate(180%) blur(20px); border: 1px solid var(--border-glass); box-shadow: var(--shadow-glass); padding: 12px 40px 12px 20px; border-radius: 24px; width: 260px; outline: none; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); font-size: 0.95rem; font-family: var(--font-stack); color: var(--text-primary); }
+        .search-box input:focus { width: 340px; border-color: var(--accent); background: var(--bg-focus); box-shadow: 0 0 0 4px var(--accent-bg), var(--shadow-glass); }
+        .search-box i { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); cursor: pointer; transition: color 0.2s; }
+        .suggest-list { position: absolute; top: calc(100% + 12px); left: 0; width: 100%; background: var(--bg-glass); backdrop-filter: saturate(180%) blur(20px); border: 1px solid var(--border-glass); border-radius: var(--radius-md); display: none; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-glass); z-index: 1000; }
+        .suggest-item { padding: 14px 20px; cursor: pointer; transition: 0.2s; color: var(--text-primary); font-size: 0.95rem; border-bottom: 1px solid var(--border-solid); }
+        .suggest-item:hover { background: var(--hover-bg); color: var(--accent); }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; margin-bottom: 32px; }
+        .stat-card { background: var(--bg-glass); backdrop-filter: saturate(180%) blur(20px); border: 1px solid var(--border-glass); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 28px; display: flex; flex-direction: column; justify-content: center; cursor: pointer; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); position: relative; overflow: hidden; }
+        .stat-card::after { content: '↗'; position: absolute; top: 20px; right: 24px; color: var(--text-secondary); opacity: 0; font-size: 1.2rem; transition: all 0.3s; }
+        .stat-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-glass); background: var(--card-hover-bg); }
+        .stat-card:hover::after { opacity: 1; transform: translate(2px, -2px); color: var(--accent); }
+        .stat-card:active { transform: scale(0.97); }
+        .stat-card h3 { margin: 0; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-card .value { font-size: 2.4rem; font-weight: 600; margin: 12px 0 0; color: var(--text-title); letter-spacing: -0.5px; font-variant-numeric: tabular-nums; transition: color 0.4s ease;}
+        .stat-card .value.highlight { background: linear-gradient(135deg, #007AFF, #5AC8FA); -webkit-background-clip: text; color: transparent; }
+
+        .chart-container { background: var(--bg-glass); backdrop-filter: saturate(180%) blur(20px); border: 1px solid var(--border-glass); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 24px; margin-bottom: 24px; position: relative; transition: all 0.4s ease;}
+
+        .empty-state-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-secondary); z-index: 5; transition: opacity 0.3s ease; }
+        .empty-state-overlay i { font-size: 3.5rem; margin-bottom: 20px; color: var(--accent); opacity: 0.4; }
+        .empty-state-overlay p { font-size: 1.1rem; font-weight: 500; letter-spacing: 0.5px; margin: 0; color: var(--text-title);}
+        .empty-state-overlay span { font-size: 0.85rem; color: var(--text-secondary); margin-top: 8px;}
+
+        .fp-glass-panel { background: var(--fp-glass-bg); backdrop-filter: blur(40px) saturate(200%); -webkit-backdrop-filter: blur(40px) saturate(200%); border: 1px solid var(--border-glass); border-radius: var(--radius-lg); box-shadow: 0 8px 32px rgba(0,0,0,0.04), inset 0 0 0 1px var(--fp-glass-inset); overflow: hidden; position: relative; transition: all 0.4s ease;}
+
+        .hero-container { display: flex; align-items: center; justify-content: center; min-height: 320px; text-align: center; padding: 40px; background: radial-gradient(circle at top right, var(--aurora-1), transparent 60%), radial-gradient(circle at bottom left, var(--aurora-2), transparent 60%); }
+        .hero-content { max-width: 800px; display: flex; flex-direction: column; align-items: center; }
+        .hero-icon { font-size: 3.5rem; margin-bottom: 24px; background: linear-gradient(135deg, #007AFF, #5AC8FA); -webkit-background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 10px 20px rgba(0, 122, 255, 0.2)); }
+        .hero-title { font-size: 2.2rem; font-weight: 600; color: var(--text-title); margin: 0 0 16px 0; letter-spacing: -0.5px; transition: color 0.4s ease;}
+        .hero-subtitle { font-size: 1.05rem; line-height: 1.6; color: var(--text-secondary); margin: 0 0 32px 0; font-weight: 400; max-width: 680px; }
+        .hero-tags { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+        
+        .hero-tag { background: var(--tag-bg); color: var(--text-primary); padding: 10px 20px; border-radius: 30px; font-size: 0.9rem; font-weight: 500; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-solid); box-shadow: var(--shadow-sm); cursor: pointer; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .hero-tag i { color: var(--accent); transition: transform 0.3s; }
+        .hero-tag:hover { background: var(--card-hover-bg); transform: translateY(-3px); box-shadow: var(--shadow-glass); color: var(--accent); border-color: var(--border-glass);}
+        .hero-tag:hover i { transform: scale(1.2); }
+        .hero-tag:active { transform: scale(0.95); box-shadow: var(--shadow-sm); }
+
+        /* ---------------- 智能选题推荐模块样式 ---------------- */
+        .topic-input-container { background: var(--bg-glass); border: 1px solid var(--border-glass); border-radius: var(--radius-lg); padding: 32px; margin-bottom: 24px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 16px;}
+        .topic-input-wrapper { display: flex; gap: 16px; }
+        .topic-input-wrapper input { flex: 1; padding: 16px 24px; font-size: 1.05rem; background: var(--bg-focus); border: 1px solid var(--border-glass); border-radius: 16px; color: var(--text-primary); outline: none; transition: 0.3s; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
+        .topic-input-wrapper input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-bg); }
+        .btn-generate { background: linear-gradient(135deg, #007AFF, #5AC8FA); color: white; border: none; padding: 0 32px; border-radius: 16px; font-size: 1.05rem; font-weight: 600; cursor: pointer; transition: 0.3s; display: flex; align-items: center; gap: 10px; box-shadow: 0 8px 20px rgba(0, 122, 255, 0.25); white-space: nowrap; }
+        .btn-generate:hover { transform: translateY(-2px); box-shadow: 0 12px 24px rgba(0, 122, 255, 0.35); }
+        .btn-generate:active { transform: scale(0.97); }
+        
+        .topic-card { background: var(--bg-glass); border: 1px solid var(--border-glass); border-radius: var(--radius-lg); padding: 28px; margin-bottom: 20px; box-shadow: var(--shadow-sm); transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); opacity: 0; transform: translateY(20px); animation: formFadeIn 0.5s forwards ease-out;}
+        .topic-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-glass); background: var(--card-hover-bg); border-color: var(--accent-bg);}
+        .topic-title-row { font-size: 1.3rem; font-weight: 600; color: var(--text-title); margin-bottom: 16px; display: flex; align-items: flex-start; gap: 12px; line-height: 1.4; }
+        .topic-title-row i { color: var(--accent); margin-top: 4px; font-size: 1.1rem; }
+        .topic-badges { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+        .topic-badge { padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 500; display: flex; align-items: center; gap: 6px; border: 1px solid transparent; }
+        .badge-innovate { background: rgba(175, 82, 222, 0.1); color: var(--apple-purple); border-color: rgba(175, 82, 222, 0.2); }
+        .badge-data { background: rgba(52, 199, 89, 0.1); color: var(--apple-green); border-color: rgba(52, 199, 89, 0.2); }
+        .badge-diff { background: rgba(255, 149, 0, 0.1); color: var(--apple-orange); border-color: rgba(255, 149, 0, 0.2); }
+        .topic-reason { background: var(--hover-bg); padding: 16px 20px; border-radius: 12px; border-left: 4px solid var(--accent); color: var(--text-secondary); font-size: 0.95rem; line-height: 1.6; }
+
+        .typing-loader { display: inline-flex; align-items: center; gap: 6px; }
+        .typing-loader span { width: 6px; height: 6px; background-color: white; border-radius: 50%; animation: typing 1.4s infinite ease-in-out both; }
+        .typing-loader span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-loader span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes typing { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+        @keyframes formFadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* ✨ 极客风终端打字机样式 */
+        .terminal-loader { background: var(--bg-focus); border: 1px solid var(--border-glass); border-radius: var(--radius-md); padding: 20px; font-family: "Courier New", Courier, monospace; font-size: 0.9rem; color: var(--apple-green); display: none; flex-direction: column; gap: 8px; box-shadow: inset 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px;}
+        .terminal-line { opacity: 0; transform: translateX(-10px); animation: termFade 0.3s forwards ease-out; }
+        .term-blue { color: var(--accent); }
+        .term-purple { color: var(--apple-purple); }
+        @keyframes termFade { to { opacity: 1; transform: translateX(0); } }
+
+        /* ✨ 论文大纲 UI */
+        .topic-outline { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--border-solid); }
+        .topic-outline h5 { margin: 0 0 10px 0; font-size: 0.9rem; color: var(--text-title); display: flex; align-items: center; gap: 6px; }
+        .outline-step { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; font-size: 0.9rem; color: var(--text-secondary); }
+        .outline-step span.num { background: var(--accent-bg); color: var(--accent); width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;}
+
+        /* ---------------- 模态框与控件样式 ---------------- */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: var(--overlay-bg); backdrop-filter: blur(5px); z-index: 2000; display: none; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s; }
+        .modal-overlay.show { display: flex; opacity: 1; }
+        .modal-content { background: var(--drawer-bg); backdrop-filter: saturate(200%) blur(30px); width: 500px; border-radius: 20px; padding: 30px; box-shadow: 0 20px 50px rgba(0,0,0,0.25), inset 0 0 0 1px var(--border-glass); transform: translateY(20px) scale(0.95); transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .modal-overlay.show .modal-content { transform: translateY(0) scale(1); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .modal-title { font-size: 1.3rem; font-weight: 600; color: var(--text-title); display: flex; align-items: center; gap: 10px; }
+        .modal-title i { color: var(--accent); }
+        .modal-close { background: var(--hover-bg); border: none; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; color: var(--text-secondary); transition: 0.2s; }
+        .modal-close:hover { background: var(--border-solid); color: var(--text-title); }
+        .modal-body { color: var(--text-primary); font-size: 0.95rem; line-height: 1.6; }
+        .modal-body p { margin-top: 0; }
+
+        .search-filters { display: flex; gap: 15px; margin-bottom: 20px; align-items: center; }
+        .filter-input { flex: 1; height: 42px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--border-glass); background: var(--bg-glass); color: var(--text-primary); font-family: var(--font-stack); font-size: 0.95rem; outline: none; box-sizing: border-box; transition: all 0.3s; }
+        .filter-input:focus { background: var(--bg-focus); border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-bg); }
+        .btn-search { height: 42px; background: var(--accent); color: #fff; border: none; border-radius: 12px; padding: 0 24px; font-weight: 500; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 12px rgba(0,122,255,0.2); display: flex; align-items: center; gap: 8px; }
+        .btn-search:hover { background: #0056b3; transform: translateY(-1px); }
+        .btn-search:active { transform: scale(0.96); }
+        
+        select { display: none !important; } 
+        
+        .custom-select-wrapper { position: relative; display: inline-block; min-width: 180px; }
+        .custom-select-trigger { height: 42px; background-color: var(--bg-glass); backdrop-filter: blur(10px); border: 1px solid var(--border-glass); padding: 0 16px; border-radius: 12px; font-family: var(--font-stack); font-size: 0.95rem; color: var(--text-primary); cursor: pointer; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow-sm); box-sizing: border-box; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .custom-select-trigger:hover { background-color: var(--bg-focus); border-color: var(--border-glass); }
+        .custom-select-wrapper.open .custom-select-trigger { border-color: var(--accent); background-color: var(--bg-focus); box-shadow: 0 0 0 4px var(--accent-bg), var(--shadow-sm); }
+        .custom-select-trigger span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 10px; }
+        .custom-select-trigger i { color: var(--text-secondary); font-size: 0.8rem; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .custom-select-wrapper.open .custom-select-trigger i { transform: rotate(-180deg); color: var(--accent); }
+        .custom-select-options { position: absolute; top: calc(100% + 8px); left: 0; right: 0; background: var(--drawer-bg); backdrop-filter: blur(25px) saturate(200%); border: 1px solid var(--border-glass); border-radius: 16px; box-shadow: var(--shadow-glass), inset 0 0 0 1px var(--fp-glass-inset); z-index: 2000; opacity: 0; visibility: hidden; transform: translateY(-10px) scale(0.98); transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); max-height: 280px; overflow-y: auto; padding: 8px; box-sizing: border-box; }
+        .custom-select-wrapper.open .custom-select-options { opacity: 1; visibility: visible; transform: translateY(0) scale(1); }
+        .custom-select-option { padding: 10px 14px; border-radius: 10px; cursor: pointer; transition: 0.2s ease; font-size: 0.95rem; color: var(--text-primary); margin-bottom: 2px; }
+        .custom-select-option:last-child { margin-bottom: 0; }
+        .custom-select-option:hover { background: var(--hover-bg); color: var(--accent); }
+        .custom-select-option.selected { background: var(--accent); color: #fff; font-weight: 500; box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3); }
+        .custom-select-options::-webkit-scrollbar { width: 4px; }
+        .custom-select-options::-webkit-scrollbar-track { background: transparent; }
+        .custom-select-options::-webkit-scrollbar-thumb { background: var(--border-solid); border-radius: 4px; }
+        .custom-select-options::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+
+        .data-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .data-table th, .data-table td { padding: 14px 16px; text-align: left; border-bottom: 1px solid var(--border-solid); font-size: 0.9rem; transition: color 0.4s ease;}
+        .data-table th { font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.8rem; }
+        .data-table tr:hover td { background: var(--hover-bg); }
+        .data-table td { color: var(--text-primary); }
+        .td-badge { background: var(--hover-bg); padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; color: var(--text-secondary); border: 1px solid var(--border-solid);}
+
+        .skeleton-row { height: 20px; background: linear-gradient(90deg, var(--skeleton-1) 25%, var(--skeleton-2) 50%, var(--skeleton-1) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite linear; border-radius: 6px; margin: 6px 0; }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+        .timeline-container { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); width: 65%; background: var(--timeline-bg); padding: 16px 32px; border-radius: 40px; border: 1px solid var(--border-glass); backdrop-filter: saturate(180%) blur(20px); display: flex; align-items: center; gap: 24px; box-shadow: var(--shadow-glass); z-index: 10;}
+        .timeline-container input[type=range] { flex: 1; -webkit-appearance: none; background: var(--border-solid); height: 6px; border-radius: 3px; outline: none; }
+        .timeline-container input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #ffffff; cursor: pointer; transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 2px 8px rgba(0,0,0,0.2); border: 0.5px solid rgba(0,0,0,0.04); }
+        .timeline-container input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.15); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        .year-display { font-size: 1.3rem; font-weight: 600; color: var(--text-title); min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
+
+        /* 右侧画像抽屉 */
+        .insight-drawer { position: fixed; right: calc(var(--insight-width) * -1 - 50px); top: 0; width: var(--insight-width); height: 100vh; background: var(--drawer-bg); border-left: 1px solid var(--border-glass); box-shadow: -10px 0 40px rgba(0,0,0,0.3); backdrop-filter: saturate(200%) blur(30px); transition: right 0.5s cubic-bezier(0.16, 1, 0.3, 1), background 0.4s ease; z-index: 999; padding: 48px 40px; box-sizing: border-box; overflow-y: auto; }
+        .insight-drawer.open { right: 0; }
+        .close-btn { position: absolute; top: 32px; right: 32px; color: var(--text-secondary); font-size: 1.2rem; cursor: pointer; transition: all 0.2s; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--hover-bg); }
+        .insight-title { color: var(--text-title); font-size: 1.5rem; font-weight: 600; margin-bottom: 40px; letter-spacing: -0.5px; display: flex; align-items: center; gap: 12px; transition: color 0.4s;}
+        .insight-card { background: var(--bg-glass); border: 1px solid var(--border-glass); border-radius: var(--radius-md); padding: 24px; margin-bottom: 24px; box-shadow: var(--shadow-sm); transition: background 0.4s ease;}
+        .insight-card h4 { margin: 0 0 20px 0; font-size: 0.9rem; font-weight: 600; color: var(--text-title); display: flex; align-items: center; gap: 10px; transition: color 0.4s ease;}
+        .insight-card h4 i { color: var(--accent); font-size: 1.1rem; }
+        .data-list { list-style: none; padding: 0; margin: 0; }
+        .data-list li { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border-solid); font-size: 0.95rem; color: var(--text-primary); transition: color 0.4s ease, border-color 0.4s ease;}
+        .data-list li:last-child { border: none; padding-bottom: 0; }
+        .badge { padding: 4px 10px; border-radius: 12px; font-size: 0.85rem; font-weight: 600;}
+        
+        .btn-export { width: 100%; padding: 14px; background: var(--btn-export-bg); border: 1px solid var(--border-glass); border-radius: 14px; color: var(--text-title); font-family: var(--font-stack); font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; box-shadow: var(--shadow-sm); }
+        .btn-export:hover { background: var(--hover-bg); border-color: var(--accent); color: var(--accent); transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.1); }
+
+        /* ✨ Spotlight 搜索界面 */
+        .spotlight-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: var(--overlay-bg); backdrop-filter: blur(12px); z-index: 9999; display: none; align-items: flex-start; justify-content: center; padding-top: 15vh; opacity: 0; transition: opacity 0.2s ease; }
+        .spotlight-overlay.show { display: flex; opacity: 1; }
+        .spotlight-box { background: var(--drawer-bg); width: 640px; border-radius: 20px; box-shadow: 0 24px 60px rgba(0,0,0,0.4), inset 0 0 0 1px var(--fp-glass-inset); overflow: hidden; transform: scale(0.95); transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); display: flex; flex-direction: column; position: relative;}
+        .spotlight-overlay.show .spotlight-box { transform: scale(1); }
+        .spotlight-box input { width: 100%; border: none; padding: 24px 24px 24px 64px; font-size: 1.6rem; outline: none; background: transparent; color: var(--text-title); font-weight: 500; box-sizing: border-box; }
+        .spotlight-box i.fa-search { position: absolute; left: 24px; top: 28px; font-size: 1.6rem; color: var(--accent); }
+        .spotlight-box .esc-hint { position: absolute; right: 24px; top: 30px; font-size: 0.85rem; color: var(--text-secondary); background: var(--bg-base); padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-glass); }
+        .spotlight-suggest { max-height: 360px; overflow-y: auto; border-top: 1px solid var(--border-solid); display: none; }
+        .spotlight-item { padding: 16px 24px 16px 64px; cursor: pointer; display: flex; align-items: center; gap: 12px; font-size: 1.15rem; color: var(--text-primary); transition: background 0.1s; position: relative;}
+        .spotlight-item:hover, .spotlight-item.active { background: var(--accent-blue-bg); color: var(--accent); font-weight: 500;}
+        .spotlight-item i.fa-arrow-right { position: absolute; right: 24px; opacity: 0; transition: opacity 0.2s; color: var(--accent); }
+        .spotlight-item:hover i.fa-arrow-right, .spotlight-item.active i.fa-arrow-right { opacity: 1; }
+    </style>
+</head>
+<body>
+<div class="spotlight-overlay" id="spotlightOverlay">
+    <div class="spotlight-box">
+        <i class="fas fa-search"></i>
+        <input type="text" id="spotlightInput" placeholder="全局搜索 学科 或 前沿技术..." autocomplete="off">
+        <span class="esc-hint">Esc</span>
+        <div class="spotlight-suggest" id="spotlightSuggest"></div>
+    </div>
+</div>
+
+<div class="app-container">
+    <div class="sidebar">
+        <div class="sidebar-header"><i class="fas fa-layer-group"></i> SPARK CEREBRO</div>
+        <div class="nav-item active" id="nav-dashboard" onclick="switchTab('dashboard', this)"><i class="fas fa-server"></i> 系统数据中枢</div>
+        <div class="nav-item" id="nav-fpgrowth" onclick="switchTab('fpgrowth', this)"><i class="fas fa-project-diagram"></i> 多维跨界星系</div>
+        <div class="nav-item" id="nav-river" onclick="switchTab('river', this)"><i class="fas fa-water"></i> 技术演进与预测</div>
+        <div class="nav-item" id="nav-explorer" onclick="switchTab('dataExplorer', this)"><i class="fas fa-book-open"></i> 文献检索溯源</div>
+        
+        <div class="nav-item" id="nav-topic" onclick="switchTab('topicGenerator', this)">
+            <i class="fas fa-graduation-cap"></i> 智能选题推荐
+        </div>
+        
+        <div class="theme-toggle-box nav-item" onclick="document.getElementById('themeToggle').click(); event.stopPropagation();">
+            <i class="fas fa-sun" id="themeIcon"></i> 
+            <span style="flex:1;">暗黑模式</span>
+            <label class="ios-switch" onclick="event.stopPropagation();">
+                <input type="checkbox" id="themeToggle" onchange="toggleTheme()">
+                <span class="slider"></span>
+            </label>
+        </div>
+
+        <a href="/logout" class="nav-item logout-btn">
+            <i class="fas fa-sign-out-alt"></i> 安全退出
+        </a>
+    </div>
+
+    <div class="main-content">
+        <div class="search-container">
+            <span class="kbd-hint"><i class="fab fa-apple"></i> Cmd + K</span>
+            <div class="search-box">
+                <input type="text" id="searchInput" class="glass-effect" placeholder="搜索学科或前沿技术..." autocomplete="off">
+                <i class="fas fa-search" onclick="executeSearch()"></i>
+                <div class="suggest-list" id="suggestList"></div>
+            </div>
+        </div>
+
+        <div id="dashboard" class="content-section active">
+            <h2 class="page-title">系统数据中枢</h2>         
+            <div class="stats-grid">
+                <div class="stat-card" onclick="switchTab('dataExplorer', document.getElementById('nav-explorer'))">
+                    <h3>解析文献当量</h3><div class="value">800,000+</div>
+                </div>
+                <div class="stat-card" onclick="openModal('clusters')">
+                    <h3>覆盖知识群簇</h3><div class="value">20</div>
+                </div>
+                <div class="stat-card" onclick="openModal('pyspark')">
+                    <h3>底层核心引擎</h3><div class="value highlight">PySpark ML</div>
+                </div>
+            </div>
+            
+            <div class="chart-container hero-container">
+                <div class="hero-content">
+                    <div class="hero-icon"><i class="fas fa-brain"></i></div>
+                    <h1 class="hero-title">洞悉学术演进，推演技术边界</h1>
+                    <p class="hero-subtitle">
+                        Spark Cerebro 是基于大数据的离线学术推演分析系统。<br>
+                        系统对核心文献进行多维清洗，运用 <strong>FP-Growth 算法</strong>挖掘跨学科共生网络，并结合 <strong>EMA 时序模型</strong>，为您客观呈现宏观技术演进轨迹与未来趋势。
+                    </p>
+                    <div class="hero-tags">
+                        <div class="hero-tag" onclick="openModal('architecture')"><i class="fas fa-database"></i> 离线批处理架构</div>
+                        <div class="hero-tag" onclick="switchTab('fpgrowth', document.getElementById('nav-fpgrowth'))"><i class="fas fa-network-wired"></i> 深度图谱挖掘</div>
+                        <div class="hero-tag" onclick="switchTab('topicGenerator', document.getElementById('nav-topic'))"><i class="fas fa-graduation-cap"></i> 自动论文选题</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="fpgrowth" class="content-section" style="position: relative; height: 100%;">
+            <h2 class="page-title">共生星系网络 <span class="sub-text" style="color: var(--accent) !important;"><i class="fas fa-hand-pointer"></i> 提示：点击任意深蓝色节点即可查阅学科画像</span></h2>
+            <div class="chart-container fp-glass-panel" id="fpChart" style="height: calc(100vh - 160px); padding: 0; border: none;"></div>
+            
+            <div class="timeline-container">
+                <i class="fas fa-clock" style="color: var(--text-secondary); font-size: 1.2rem;"></i>
+                <input type="range" id="timeSlider" min="2019" max="2028" value="2024" oninput="updateYearDisplay(this.value)" onchange="loadFPNetworkByYear(this.value)">
+                <div class="year-display" id="yearLabel">2024</div>
+            </div>
+        </div>      
+
+        <div id="river" class="content-section">
+            <h2 class="page-title">技术演进轨迹与前瞻推演</h2>
+            <div style="margin-bottom: 24px;">
+                <select id="disciplineSelect" onchange="loadRiverData()">
+                    <option value="All" disabled selected hidden>请选择分析学科...</option>
+                    {% for d in disciplines %}
+                    <option value="{{ d }}">{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="chart-container" style="height: calc(100vh - 220px); position: relative; padding: 0;">
+                <div id="riverEmptyState" class="empty-state-overlay">
+                    <i class="fas fa-chart-area"></i>
+                    <p>请在上方下拉菜单中选择一个学科</p>
+                    <span>系统将为您生成该领域的演进推演图谱</span>
+                </div>
+                <div id="riverChart" style="width: 100%; height: 100%;"></div>
+            </div>
+        </div>
+
+        <div id="dataExplorer" class="content-section">
+            <h2 class="page-title">文献检索溯源 (清洗库库底) <span class="sub-text"><i class="fas fa-bolt"></i> 为保证系统流畅，单次检索最多展示最新 50 条匹配记录</span></h2>
+            <div class="chart-container" style="min-height: calc(100vh - 200px);">
+                <div class="search-filters">
+                    <select id="filterDiscipline">
+                        <option value="All">所有学科群簇</option>
+                        {% for d in disciplines %}
+                        <option value="{{ d }}">{{ d }}</option>
+                        {% endfor %}
+                    </select>
+                    <select id="filterYear">
+                        <option value="All">所有年份</option>
+                        <option value="2025">2025</option>
+                        <option value="2024">2024</option>
+                        <option value="2023">2023</option>
+                        <option value="2022">2022</option>
+                        <option value="2021">2021</option>
+                        <option value="2020">2020</option>
+                        <option value="2019">2019</option>
+                    </select>
+                    <input type="text" id="filterKeyword" class="filter-input" placeholder="输入论文标题关键字 (支持留空查询所有)...">
+                    <button class="btn-search" onclick="searchPapers()"><i class="fas fa-search"></i> 溯源检索</button>
+                </div>
+                
+                <div style="overflow-y: auto; max-height: 60vh;">
+                    <table class="data-table" id="dataTable">
+                        <thead>
+                            <tr>
+                                <th width="10%">年份</th>
+                                <th width="15%">学科归属</th>
+                                <th width="60%">文献标题</th>
+                                <th width="15%">数据源</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataBody">
+                            <tr><td colspan="4" style="text-align: center; padding: 40px; color: var(--text-secondary);">请点击检索查询底层库数据...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="topicGenerator" class="content-section">
+            <h2 class="page-title">智能论文选题引擎 <span class="sub-text"><i class="fas fa-magic"></i> 基于大模型与图谱关联的自动化命题评估</span></h2>
+            
+            <div class="topic-input-container">
+                <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-title); font-weight: 600;">输入研究兴趣或前沿热词</h3>
+                <div class="topic-input-wrapper">
+                    <input type="text" id="topicInput" placeholder="例如：大语言模型, 医疗电子病历, 隐私保护..." autocomplete="off">
+                    <button class="btn-generate" id="btnGenerate" onclick="generateTopics()">
+                        <span id="btnGenText">AI 智能命题</span>
+                        <div class="typing-loader" id="btnGenLoader" style="display: none;"><span></span><span></span><span></span></div>
+                    </button>
+                </div>
+                <span style="font-size: 0.85rem; color: var(--text-secondary);">系统将融合底层 80 万文献当量与 FP-Growth 跨界规则，自动为您推演具备「交叉创新性」的开题大纲。</span>
+            </div>
+
+            <div id="topicResultsArea">
+                <div class="empty-state-overlay" id="topicEmptyState" style="position: relative; height: 300px;">
+                    <i class="fas fa-robot"></i>
+                    <p>输入你的专业领域方向</p>
+                    <span>Cerebro AI 将为您一键生成高通过率的毕设选题及可行性研判</span>
+                </div>
+                <div id="topicCardsContainer"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="insight-drawer" id="insightDrawer">
+        <i class="fas fa-times close-btn" onclick="closeDrawer()" title="关闭"></i>
+        <div id="snapshotArea" style="background: var(--drawer-bg); padding: 10px; border-radius: 16px;">
+            <div class="insight-title" id="drawerTitle">学科画像</div>
+            <div class="insight-card" style="height: 260px; padding: 10px;" id="radarChart"></div>
+            <div class="insight-card">
+                <h4><i class="fas fa-project-diagram"></i> 跨界基因关联</h4>
+                <ul class="data-list" id="bridgeList"></ul>
+            </div>
+            <div class="insight-card">
+                <h4><i class="fas fa-arrow-trend-up"></i> 2027 爆发增长榜</h4>
+                <ul class="data-list" id="starsList"></ul>
+            </div>
+            <div id="watermark" style="display: none; text-align: center; color: var(--text-secondary); font-size: 0.8rem; margin-top: 15px; border-top: 1px solid var(--border-solid); padding-top: 10px;">
+                Generated by Spark Cerebro BigData Engine
+            </div>
+        </div>
+        <button class="btn-export" onclick="exportSnapshot()"><i class="fas fa-camera"></i> 一键生成洞察报告 (PNG)</button>
+    </div>
+
+    <div class="modal-overlay" id="infoModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="modalTitle"><i class="fas fa-info-circle"></i> 标题</div>
+                <button class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body" id="modalBody">内容...</div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    const charts = {};
+    
+    // ✨ 更换为极客/极光质感配色的高级调色盘
+    const premiumColors = [
+        '#00C6FF', // Cyan
+        '#007AFF', // Blue
+        '#5856D6', // Indigo
+        '#AF52DE', // Purple
+        '#FF2D55', // Pink/Red
+        '#FF9500', // Orange
+        '#34C759', // Green
+        '#32ADE6'  // Light Blue
+    ];
+    
+    let currentFpData = null;
+    let currentRiverData = null;
+    let currentRadarData = null;
+    let currentDisciplineName = "";
+
+    // 🌗 暗黑模式切换逻辑
+    function toggleTheme() {
+        const isDark = document.getElementById('themeToggle').checked;
+        const icon = document.getElementById('themeIcon');
+        if(isDark) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            icon.className = 'fas fa-moon';
+            localStorage.setItem('spark_theme', 'dark');
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+            icon.className = 'fas fa-sun';
+            localStorage.setItem('spark_theme', 'light');
+        }
+        // 主题切换时，通知 ECharts 热更新图表颜色
+        if(currentFpData) renderFpChart();
+        if(currentRiverData) renderRiverChart();
+        if(currentRadarData) renderRadarChart();
+    }
+
+    function getEChartsColors() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        return {
+            tooltipBg: isDark ? 'rgba(28, 28, 30, 0.9)' : 'rgba(255,255,255,0.9)',
+            tooltipBorder: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+            textTitle: isDark ? '#FFFFFF' : '#1D1D1F',
+            textSec: isDark ? '#A1A1A6' : '#8E8E93',
+            border: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)',
+            borderLight: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+            bgBase: isDark ? '#000000' : '#F2F2F7' // ✨ 为负空间边框动态获取底色
+        };
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initCustomSelects();
+        const savedTheme = localStorage.getItem('spark_theme');
+        if(savedTheme === 'dark') {
+            document.getElementById('themeToggle').checked = true;
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeIcon').className = 'fas fa-moon';
+        }
+        
+        document.getElementById('topicInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') generateTopics();
+        });
+    });
+
+    function initCustomSelects() {
+        const selects = document.querySelectorAll('select');
+        selects.forEach(select => {
+            if (select.nextElementSibling && select.nextElementSibling.classList.contains('custom-select-wrapper')) return;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'custom-select-wrapper';
+            select.parentNode.insertBefore(wrapper, select);
+            wrapper.appendChild(select);
+            const trigger = document.createElement('div');
+            trigger.className = 'custom-select-trigger';
+            trigger.innerHTML = `<span>${select.options[select.selectedIndex]?.text || '请选择...'}</span><i class="fas fa-chevron-down"></i>`;
+            wrapper.appendChild(trigger);
+            const optionsDiv = document.createElement('div');
+            optionsDiv.className = 'custom-select-options';
+            Array.from(select.options).forEach((option) => {
+                if (option.hidden) return; 
+                const optionDiv = document.createElement('div');
+                optionDiv.className = 'custom-select-option';
+                if (option.selected) optionDiv.classList.add('selected');
+                optionDiv.textContent = option.text;
+                optionDiv.dataset.value = option.value;
+                optionDiv.addEventListener('click', function(e) {
+                    select.value = this.dataset.value;
+                    trigger.querySelector('span').textContent = this.textContent;
+                    optionsDiv.querySelectorAll('.custom-select-option').forEach(opt => opt.classList.remove('selected'));
+                    this.classList.add('selected');
+                    wrapper.classList.remove('open');
+                    select.dispatchEvent(new Event('change'));
+                });
+                optionsDiv.appendChild(optionDiv);
+            });
+            wrapper.appendChild(optionsDiv);
+            trigger.addEventListener('click', function(e) {
+                e.stopPropagation();
+                document.querySelectorAll('.custom-select-wrapper').forEach(w => {
+                    if (w !== wrapper) w.classList.remove('open');
+                });
+                wrapper.classList.toggle('open');
+            });
+        });
+        document.addEventListener('click', function() { document.querySelectorAll('.custom-select-wrapper').forEach(w => w.classList.remove('open')); });
+    }
+
+    function switchTab(tabId, el) {
+        document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+        if (el) el.classList.add('active');
+        document.querySelectorAll('.content-section').forEach(sec => {
+            sec.classList.remove('active');
+            sec.style.display = 'none';
+        });
+        const target = document.getElementById(tabId);
+        target.style.display = 'block';
+        setTimeout(() => { 
+            target.classList.add('active'); 
+            if (charts.fp) charts.fp.resize(); 
+            if (charts.river) charts.river.resize(); 
+            if (charts.radar) charts.radar.resize();
+        }, 50);
+        
+        if (tabId === 'fpgrowth') loadFPNetworkByYear(document.getElementById('timeSlider').value);
+        if (tabId === 'river') loadRiverData();
+        if (tabId === 'dataExplorer' && document.getElementById('dataBody').children.length === 1) searchPapers();
+    }
+
+    const searchInput = document.getElementById('searchInput');
+    const suggestList = document.getElementById('suggestList');
+    let searchTimer;
+    searchInput.addEventListener('keypress', function (e) { if (e.key === 'Enter') { suggestList.style.display = 'none'; executeSearch(this.value); }});
+    searchInput.addEventListener('input', (e) => { handleSuggest(e.target.value, suggestList, searchInput); });
+    function selectSuggest(val) { searchInput.value = val; suggestList.style.display = 'none'; executeSearch(val); }
+
+    const sOverlay = document.getElementById('spotlightOverlay');
+    const sInput = document.getElementById('spotlightInput');
+    const sSuggest = document.getElementById('spotlightSuggest');
+    
+    document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+            e.preventDefault();
+            sOverlay.classList.add('show');
+            setTimeout(() => sInput.focus(), 100);
+        }
+        if (e.key === 'Escape' && sOverlay.classList.contains('show')) {
+            sOverlay.classList.remove('show');
+            sInput.value = ''; sSuggest.style.display = 'none';
+        }
+    });
+    sOverlay.addEventListener('click', (e) => { if(e.target === sOverlay) { sOverlay.classList.remove('show'); sInput.value = ''; sSuggest.style.display = 'none';} });
+    
+    sInput.addEventListener('keypress', function(e) { 
+        if (e.key === 'Enter') { 
+            sOverlay.classList.remove('show'); 
+            sSuggest.style.display = 'none'; 
+            executeSearch(this.value); 
+            this.value = ''; 
+        }
+    });
+    sInput.addEventListener('input', (e) => { handleSuggest(e.target.value, sSuggest, sInput, true); });
+
+    function handleSuggest(query, listEl, inputEl, isSpotlight=false) {
+        clearTimeout(searchTimer);
+        const q = query.trim();
+        if (!q) { listEl.style.display = 'none'; return; }
+        searchTimer = setTimeout(() => {
+            fetch(`/api/search_suggest?q=${encodeURIComponent(q)}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.suggestions.length > 0) {
+                        listEl.innerHTML = data.suggestions.map(s => {
+                            if(isSpotlight) return `<div class="spotlight-item" onclick="executeSearch('${s}'); document.getElementById('spotlightOverlay').classList.remove('show');"><span>${s}</span><i class="fas fa-arrow-right"></i></div>`;
+                            return `<div class="suggest-item" onclick="selectSuggest('${s}')">${s}</div>`;
+                        }).join('');
+                        listEl.style.display = isSpotlight ? 'block' : 'flex';
+                    } else { listEl.style.display = 'none'; }
+                });
+        }, 300);
+    }
+
+    function executeSearch(directQuery = null) {
+        const query = directQuery || searchInput.value.trim();
+        if(!query) return;
+        document.getElementById('insightDrawer').classList.add('open');
+        document.getElementById('drawerTitle').innerHTML = `<i class="fas fa-circle-notch fa-spin" style="color:var(--accent); font-size:1.2rem; margin-right:12px;"></i> 数据下钻解析中...`;
+        
+        fetch(`/api/discipline_insights?discipline=${encodeURIComponent(query)}`)
+            .then(res => res.json())
+            .then(data => {
+                currentDisciplineName = data.actual_discipline || query;
+                document.getElementById('drawerTitle').innerHTML = `<i class="fas fa-layer-group" style="color:var(--accent);"></i> ${currentDisciplineName} <span style="font-size:0.8rem; font-weight:normal; color:var(--text-secondary); margin-left:10px;">深度画像</span>`;
+                
+                currentRadarData = data.radar;
+                renderRadarChart();
+
+                const bList = document.getElementById('bridgeList');
+                bList.innerHTML = data.bridges.map(b => `<li><span>${b.keyword}</span> <span style="color:#8E8E93; font-size: 0.9rem;">${b.linked_discipline}</span></li>`).join('') || "<li>暂无显著跨界数据</li>";
+
+                const sList = document.getElementById('starsList');
+                sList.innerHTML = data.rising_stars.map(s => {
+                    const gVal = parseFloat(s.growth);
+                    const sign = gVal > 0 ? '+' : '';
+                    const color = gVal >= 0 ? 'var(--apple-green)' : 'var(--error-red)';
+                    const bg = gVal >= 0 ? 'rgba(52, 199, 89, 0.15)' : 'rgba(255, 59, 48, 0.15)';
+                    return `<li><span>${s.word}</span> <span class="badge" style="background:${bg}; color:${color};">${sign}${gVal.toFixed(1)}%</span></li>`;
+                }).join('') || "<li>暂无推演数据</li>";
+            });
+    }
+
+    function renderRadarChart() {
+        if(!currentRadarData) return;
+        if (!charts.radar) charts.radar = echarts.init(document.getElementById('radarChart'));
+        const c = getEChartsColors();
+        charts.radar.setOption({
+            tooltip: { backgroundColor: c.tooltipBg, borderColor: c.tooltipBorder, textStyle: { color: c.textTitle }, extraCssText: 'backdrop-filter: blur(10px); border-radius: 8px;' },
+            radar: { indicator: currentRadarData.map(i => ({ name: i.name, max: i.max })), splitArea: { show: false }, axisLine: { lineStyle: { color: c.borderLight } }, splitLine: { lineStyle: { color: c.border } }, axisName: { color: c.textSec, fontWeight: 500 } },
+            series: [{ type: 'radar', data: [{ value: currentRadarData.map(i => i.value), name: currentDisciplineName, areaStyle: { color: 'rgba(0, 122, 255, 0.15)' }, lineStyle: { color: '#007AFF', width: 2 }, itemStyle: { color: '#007AFF' } }] }]
+        });
+    }
+
+    function closeDrawer() { document.getElementById('insightDrawer').classList.remove('open'); }
+    function updateYearDisplay(val) { document.getElementById('yearLabel').innerText = val; }
+
+    function loadFPNetworkByYear(year) {
+        if (!charts.fp) charts.fp = echarts.init(document.getElementById('fpChart'));
+        charts.fp.showLoading({ maskColor: 'rgba(255, 255, 255, 0.1)', textColor: '#007AFF', spinnerRadius: 14, lineWidth: 3, color: '#007AFF' });
+        fetch(`/api/network_timeline?year=${year}`).then(res => res.json()).then(data => {
+            charts.fp.hideLoading();
+            currentFpData = data;
+            renderFpChart();
+
+            charts.fp.off('click'); 
+            charts.fp.on('click', function(params) {
+                if (params.dataType === 'node' && params.data.category === 0) {
+                    executeSearch(params.name);
+                }
+            });
+        });
+    }
+
+    function renderFpChart() {
+        if(!currentFpData) return;
+        const c = getEChartsColors();
+        const nodes = currentFpData.nodes || [];
+        const links = currentFpData.links || [];
+        const categories = currentFpData.categories || [{"name": "学科群簇"}, {"name": "前沿热词"}];
+        
+        charts.fp.setOption({
+            color: ['#007AFF', '#5AC8FA'],
+            tooltip: { backgroundColor: c.tooltipBg, borderColor: c.tooltipBorder, textStyle: { color: c.textTitle }, extraCssText: 'backdrop-filter: blur(10px); border-radius: 8px;' },
+            legend: { textStyle: { color: c.textSec, fontWeight: 500 }, bottom: 0, icon: 'circle' },
+            series: [{ type: 'graph', layout: 'force', data: nodes, links: links, categories: categories, roam: true, label: { show: true, position: 'right', formatter: '{b}', color: c.textTitle, fontSize: 11, fontWeight: 500 }, force: { repulsion: 700, edgeLength: [50, 160], gravity: 0.1 }, lineStyle: { color: c.border, curveness: 0.2, width: 1 } }]
+        }, true);
+    }
+
+    function loadRiverData() {
+        const discipline = document.getElementById('disciplineSelect').value;
+        if (!discipline || discipline === 'All') return; 
+        
+        document.getElementById('riverEmptyState').style.display = 'none';
+
+        if (!charts.river) charts.river = echarts.init(document.getElementById('riverChart'));
+        charts.river.showLoading({ maskColor: 'rgba(255, 255, 255, 0.1)', textColor: '#007AFF', spinnerRadius: 14, lineWidth: 3, color: '#007AFF' });
+        
+        fetch(`/api/themeriver?discipline=${encodeURIComponent(discipline)}`).then(res => res.json()).then(res => {
+            charts.river.hideLoading();
+            currentRiverData = (res.data || []).map(item => {
+                let year = item.publish_year !== undefined ? item.publish_year : item[0];
+                let count = item.count !== undefined ? item.count : item[1];
+                let word = item.word !== undefined ? item.word : item[2];
+                return [String(year).length === 4 ? `${year}-01-01` : String(year), parseFloat(count) || 0, String(word)];
+            });
+            renderRiverChart();
+        });
+    }
+
+    // ✨ 高级重绘：赋予 ThemeRiver 图表留白缝隙和极光配色
+    function renderRiverChart() {
+        if(!currentRiverData) return;
+        const c = getEChartsColors();
+        charts.river.setOption({ 
+            color: premiumColors, // 使用更协调的极光冷色系
+            tooltip: { trigger: 'axis', backgroundColor: c.tooltipBg, borderColor: c.tooltipBorder, textStyle: { color: c.textTitle }, extraCssText: 'backdrop-filter: blur(10px); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);' }, 
+            singleAxis: { type: 'time', top: 30, bottom: 40, axisLabel: { color: c.textSec, fontWeight: 500 }, splitLine: { show: true, lineStyle: { color: c.borderLight, type: 'dashed' } }, axisLine: { lineStyle: { color: c.border } } }, 
+            series: [{ 
+                type: 'themeRiver', 
+                data: currentRiverData, 
+                emphasis: { focus: 'series' }, 
+                itemStyle: { 
+                    opacity: 0.75, // 降低透明度提升质感
+                    borderWidth: 1.5, // 开启河流边框
+                    borderColor: c.bgBase // 边框颜色设为背景色，形成惊艳的“留白切割”效果
+                } 
+            }] 
+        }, true);
+    }
+
+    function searchPapers() {
+        const keyword = document.getElementById('filterKeyword').value;
+        const discipline = document.getElementById('filterDiscipline').value;
+        const year = document.getElementById('filterYear').value;
+        const tbody = document.getElementById('dataBody');
+        
+        const skeletonHTML = Array(5).fill(0).map(() => `
+            <tr>
+                <td><div class="skeleton-row" style="width: 50%"></div></td>
+                <td><div class="skeleton-row" style="width: 70%"></div></td>
+                <td><div class="skeleton-row" style="width: 90%"></div></td>
+                <td><div class="skeleton-row" style="width: 60%"></div></td>
+            </tr>
+        `).join('');
+        tbody.innerHTML = skeletonHTML;
+
+        fetch('/api/search_papers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword, discipline, year })
+        })
+        .then(res => res.json())
+        .then(res => {
+            if(res.status === 'success') {
+                if(res.data.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color: var(--text-secondary); padding: 40px;">未匹配到相关文献数据，请调整检索条件。</td></tr>`;
+                    return;
+                }
+                tbody.innerHTML = res.data.map(item => `
+                    <tr>
+                        <td><span class="td-badge">${item.publish_year !== undefined ? item.publish_year : item[2]}</span></td>
+                        <td>${item.discipline !== undefined ? item.discipline : item[1]}</td>
+                        <td style="font-weight:500;">${item.title !== undefined ? item.title : item[0]}</td>
+                        <td><span style="color:var(--text-secondary);">${item.source !== undefined ? item.source : item[3]}</span></td>
+                    </tr>
+                `).join('');
+            }
+        });
+    }
+
+    function exportSnapshot() {
+        const drawer = document.getElementById('insightDrawer');
+        const exportBtn = drawer.querySelector('.btn-export');
+        const closeBtn = drawer.querySelector('.close-btn');
+        const snapshotArea = document.getElementById('snapshotArea');
+        const watermark = document.getElementById('watermark');
+        
+        exportBtn.style.display = 'none';
+        closeBtn.style.display = 'none';
+        watermark.style.display = 'block';
+        
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const captureBg = isDark ? '#1C1C1E' : '#ffffff';
+        
+        html2canvas(snapshotArea, { 
+            backgroundColor: captureBg, 
+            scale: 2, 
+            useCORS: true 
+        }).then(canvas => {
+            const link = document.createElement('a');
+            link.download = `Spark_Cerebro_Insight_${new Date().toISOString().slice(0,10)}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            
+            exportBtn.style.display = 'flex';
+            closeBtn.style.display = 'flex';
+            watermark.style.display = 'none';
+        });
+    }
+
+    function generateTopics() {
+        const inputStr = document.getElementById('topicInput').value.trim();
+        if(!inputStr) return;
+
+        const btn = document.getElementById('btnGenerate');
+        const btnText = document.getElementById('btnGenText');
+        const btnLoader = document.getElementById('btnGenLoader');
+        const resultsArea = document.getElementById('topicCardsContainer');
+        const emptyState = document.getElementById('topicEmptyState');
+
+        btn.disabled = true;
+        btnText.style.display = 'none';
+        btnLoader.style.display = 'inline-flex';
+        emptyState.style.display = 'none';
+
+        resultsArea.innerHTML = `
+            <div class="terminal-loader" id="termLoader">
+                <div class="terminal-line"><span class="term-blue">[Cerebro OS]</span> 初始化本地推理引擎...</div>
+                <div class="terminal-line" style="animation-delay: 0.5s"><span class="term-purple">[Spark Graph]</span> 正在全库遍历词条: '${inputStr}'</div>
+                <div class="terminal-line" style="animation-delay: 1.2s"><span class="term-purple">[FP-Growth]</span> 提取高置信度跨界基因矩阵...</div>
+                <div class="terminal-line" style="animation-delay: 2.0s"><span class="term-blue">[AST Compiler]</span> 构建语法树，注入时序演进预测权重...</div>
+                <div class="terminal-line" style="animation-delay: 2.8s" style="color: var(--text-primary);">>> 推理完成，正在解析大纲序列...</div>
+            </div>
+        `;
+        
+        const termLoader = document.getElementById('termLoader');
+        termLoader.style.display = 'flex';
+
+        fetch('/api/generate_topics', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword: inputStr })
+        })
+        .then(res => res.json())
+        .then(res => {
+            setTimeout(() => {
+                if(res.status === 'success') {
+                    resultsArea.innerHTML = res.data.map((item, index) => `
+                        <div class="topic-card" style="animation-delay: ${index * 0.15}s;">
+                            <div class="topic-title-row">
+                                <i class="fas fa-file-alt"></i> 
+                                ${item.title}
+                            </div>
+                            <div class="topic-badges">
+                                <span class="topic-badge badge-innovate"><i class="fas fa-lightbulb"></i> 创新度: ${item.innovate}</span>
+                                <span class="topic-badge badge-data"><i class="fas fa-database"></i> 资料库: ${item.data}</span>
+                                <span class="topic-badge badge-diff"><i class="fas fa-tachometer-alt"></i> 落地难度: ${item.diff}</span>
+                            </div>
+                            <div class="topic-reason">
+                                <strong><i class="fas fa-robot"></i> Cerebro 研判：</strong> ${item.reason}
+                            </div>
+                            <div class="topic-outline">
+                                <h5><i class="fas fa-tasks"></i> 核心开题大纲推演</h5>
+                                ${item.outline ? item.outline.map((step, i) => `
+                                    <div class="outline-step"><span class="num">${i+1}</span> ${step}</div>
+                                `).join('') : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    resultsArea.innerHTML = `<p style="text-align:center; color: var(--error-red); padding: 40px;">引擎推演失败：${res.message}</p>`;
+                }
+                
+                btn.disabled = false;
+                btnText.style.display = 'inline-block';
+                btnLoader.style.display = 'none';
+            }, 3200); 
+        })
+        .catch(err => {
+            resultsArea.innerHTML = `<p style="text-align:center; color: var(--error-red); padding: 40px;">网络请求异常，Spark 引擎未响应。</p>`;
+            btn.disabled = false;
+            btnText.style.display = 'inline-block';
+            btnLoader.style.display = 'none';
+        });
+    }
+
+    const modalData = {
+        'pyspark': {
+            title: '<i class="fas fa-bolt"></i> PySpark ML 核心引擎',
+            body: '<p><strong>PySpark ML (DataFrame API)</strong> 是 Apache Spark 生态中最新一代的分布式机器学习库。</p><p>在本毕设系统中，它承担了最重的计算任务：将 46 万条清洗后的文献标题进行分布式分词、去停用词，并运用 <strong>FP-Growth (频繁模式增长)</strong> 算法在多节点集群中并行挖掘跨学科关联规则，突破了单机内存的计算瓶颈。</p>'
+        },
+        'architecture': {
+            title: '<i class="fas fa-server"></i> 离线批处理架构',
+            body: '<p>本系统采用经典的 <strong>Lambda 架构离线层</strong>设计。</p><p>原始文献存储在底层库中。调度系统定期触发 Spark 批处理作业，利用集群算力完成海量数据的时序聚合（EMA模型）与图谱挖掘（FP-Growth），并将结果（Serving Data）覆写回 MySQL 供本前端控制台进行秒级检索与可视化展现。</p>'
+        },
+        'clusters': {
+            title: '<i class="fas fa-layer-group"></i> 20 大核心知识群簇',
+            body: '<p>本系统通过对海量底层文献元数据（Metadata）的深度清洗与归一化，精准锁定并构建了 <strong>20 个高价值的宏观学科领域</strong>（例如 Computer Science, Medicine, Economics 等）。</p><p>这些知识群簇构成了学术推演的<strong>空间坐标系</strong>。系统所有的时序生命周期预测（EMA 模型）与跨界基因关联挖掘（FP-Growth 算法），均在这 20 个维度的多边网格中交叉展开，从而确保了技术推演边界的完整性与科学性。</p>'
+        }
+    };
+
+    function openModal(type) {
+        const data = modalData[type];
+        document.getElementById('modalTitle').innerHTML = data.title;
+        document.getElementById('modalBody').innerHTML = data.body;
+        document.getElementById('infoModal').classList.add('show');
+    }
+
+    function closeModal() {
+        document.getElementById('infoModal').classList.remove('show');
+    }
+
+    window.addEventListener('resize', () => { if (charts.fp) charts.fp.resize(); if (charts.river) charts.river.resize(); if (charts.radar) charts.radar.resize(); });
+</script>
+</body>
+</html>
