@@ -298,6 +298,31 @@
         .spotlight-item:hover, .spotlight-item.active { background: var(--accent-blue-bg); color: var(--accent); font-weight: 500;}
         .spotlight-item i.fa-arrow-right { position: absolute; right: 24px; opacity: 0; transition: opacity 0.2s; color: var(--accent); }
         .spotlight-item:hover i.fa-arrow-right, .spotlight-item.active i.fa-arrow-right { opacity: 1; }
+
+        /* ✨ 选题模块内嵌式排行榜样式 */
+        .leaderboard-container { width: 100%; display: none; flex-direction: column; transition: opacity 0.5s ease; margin-bottom: 24px; animation: formFadeIn 0.5s forwards ease-out;}
+        .leaderboard-container.show { display: flex; }
+        .leaderboard-title { font-size: 1.3rem; font-weight: 700; color: var(--text-title); margin-bottom: 8px; display: flex; align-items: center; gap: 12px; letter-spacing: -0.5px; }
+        .leaderboard-title i { color: var(--accent); }
+        .leaderboard-subtitle { font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 20px; }
+        .leaderboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; width: 100%; }
+        .rank-card { background: var(--bg-glass); backdrop-filter: saturate(180%) blur(20px); border: 1px solid var(--border-glass); border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow-sm); transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); cursor: pointer; position: relative; overflow: hidden; }
+        .rank-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-glass); background: var(--card-hover-bg); border-color: var(--accent-bg); }
+        .rank-card::before { content: attr(data-rank); position: absolute; top: -15px; right: -10px; font-size: 6rem; font-weight: 800; color: var(--text-secondary); opacity: 0.05; transition: opacity 0.3s; z-index: 0; }
+        .rank-card:hover::before { opacity: 0.1; color: var(--accent); }
+        .rank-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; position: relative; z-index: 1; }
+        .rank-disc-name { font-size: 1.25rem; font-weight: 600; color: var(--text-title); margin: 0; }
+        .rank-heat { background: rgba(255, 59, 48, 0.1); color: var(--error-red); padding: 4px 10px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+        .rank-words { display: flex; flex-wrap: wrap; gap: 8px; position: relative; z-index: 1; }
+        .rank-word-tag { background: var(--hover-bg); color: var(--text-primary); padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; border: 1px solid var(--border-solid); transition: all 0.2s; }
+        .rank-card:hover .rank-word-tag { background: var(--bg-focus); border-color: var(--border-glass); color: var(--accent);}
+
+        /* 骨架屏动画 */
+        .lb-skeleton { width: 100%; display: none; flex-direction: column; margin-bottom: 24px; }
+        .lb-skeleton.show { display: flex; }
+        .sk-title { width: 300px; height: 30px; border-radius: 15px; margin-bottom: 24px; }
+        .sk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; width: 100%; }
+        .sk-card { height: 160px; border-radius: var(--radius-lg); }
     </style>
 </head>
 <body>
@@ -383,7 +408,7 @@
             
             <div class="timeline-container">
                 <i class="fas fa-clock" style="color: var(--text-secondary); font-size: 1.2rem;"></i>
-                <input type="range" id="timeSlider" min="2019" max="2028" value="2024" oninput="updateYearDisplay(this.value)" onchange="loadFPNetworkByYear(this.value)">
+                <input type="range" id="timeSlider" min="2019" max="2026" value="2024" oninput="updateYearDisplay(this.value)" onchange="loadFPNetworkByYear(this.value)">
                 <div class="year-display" id="yearLabel">2024</div>
             </div>
         </div>      
@@ -420,6 +445,7 @@
                     </select>
                     <select id="filterYear">
                         <option value="All">所有年份</option>
+                        <option value="2026">2026</option>
                         <option value="2025">2025</option>
                         <option value="2024">2024</option>
                         <option value="2023">2023</option>
@@ -465,11 +491,27 @@
                 <span style="font-size: 0.85rem; color: var(--text-secondary);">系统将融合底层 80 万文献当量与 FP-Growth 跨界规则，自动为您推演具备「交叉创新性」的开题大纲。</span>
             </div>
 
-            <div id="topicResultsArea">
-                <div class="empty-state-overlay" id="topicEmptyState" style="position: relative; height: 300px;">
-                    <i class="fas fa-robot"></i>
-                    <p>输入你的专业领域方向</p>
-                    <span>Cerebro AI 将为您一键生成高通过率的毕设选题及可行性研判</span>
+            <div id="lbSkeleton" class="lb-skeleton">
+                <div class="skeleton-row sk-title"></div>
+                <div class="sk-grid">
+                    <div class="skeleton-row sk-card"></div><div class="skeleton-row sk-card"></div>
+                    <div class="skeleton-row sk-card"></div><div class="skeleton-row sk-card"></div>
+                </div>
+            </div>
+            
+            <div id="leaderboardContainer" class="leaderboard-container">
+                <div class="leaderboard-title"><i class="fas fa-fire-flame-curved"></i> 灵感引擎：全局学科热度榜单 (Top 10)</div>
+                <div class="leaderboard-subtitle">系统根据全量文献聚合计算得出。您可以直接点击下方的任意学科或热词，一键为您生成相关选题。</div>
+                <div class="leaderboard-grid" id="leaderboardGrid">
+                    </div>
+            </div>
+
+            <div id="topicResultsArea" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0; font-size: 1.2rem; color: var(--text-title);">AI 推演结果</h3>
+                    <button class="btn-export" style="width: auto; padding: 8px 16px; margin: 0; font-size: 0.9rem;" onclick="resetToLeaderboard()">
+                        <i class="fas fa-arrow-left"></i> 返回灵感榜单
+                    </button>
                 </div>
                 <div id="topicCardsContainer"></div>
             </div>
@@ -483,11 +525,11 @@
             <div class="insight-title" id="drawerTitle">学科画像</div>
             <div class="insight-card" style="height: 260px; padding: 10px;" id="radarChart"></div>
             <div class="insight-card">
-                <h4><i class="fas fa-project-diagram"></i> 跨界基因关联</h4>
+                <h4><i class="fas fa-project-diagram"></i> 学科热点词汇</h4>
                 <ul class="data-list" id="bridgeList"></ul>
             </div>
             <div class="insight-card">
-                <h4><i class="fas fa-arrow-trend-up"></i> 2027 爆发增长榜</h4>
+                <h4><i class="fas fa-chart-line"></i> 2026 演进趋势榜</h4>
                 <ul class="data-list" id="starsList"></ul>
             </div>
             <div id="watermark" style="display: none; text-align: center; color: var(--text-secondary); font-size: 0.8rem; margin-top: 15px; border-top: 1px solid var(--border-solid); padding-top: 10px;">
@@ -528,6 +570,7 @@
     let currentRiverData = null;
     let currentRadarData = null;
     let currentDisciplineName = "";
+    let isLeaderboardLoaded = false;
 
     // 🌗 暗黑模式切换逻辑
     function toggleTheme() {
@@ -542,7 +585,6 @@
             icon.className = 'fas fa-sun';
             localStorage.setItem('spark_theme', 'light');
         }
-        // 主题切换时，通知 ECharts 热更新图表颜色
         if(currentFpData) renderFpChart();
         if(currentRiverData) renderRiverChart();
         if(currentRadarData) renderRadarChart();
@@ -557,7 +599,7 @@
             textSec: isDark ? '#A1A1A6' : '#8E8E93',
             border: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)',
             borderLight: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-            bgBase: isDark ? '#000000' : '#F2F2F7' // ✨ 为负空间边框动态获取底色
+            bgBase: isDark ? '#000000' : '#F2F2F7' 
         };
     }
 
@@ -634,9 +676,69 @@
             if (charts.radar) charts.radar.resize();
         }, 50);
         
+        if (tabId === 'topicGenerator') {
+            loadLeaderboard();
+        }
+        
         if (tabId === 'fpgrowth') loadFPNetworkByYear(document.getElementById('timeSlider').value);
         if (tabId === 'river') loadRiverData();
         if (tabId === 'dataExplorer' && document.getElementById('dataBody').children.length === 1) searchPapers();
+    }
+
+    function loadLeaderboard() {
+        if(isLeaderboardLoaded) {
+            if (document.getElementById('topicCardsContainer').innerHTML === '') {
+                document.getElementById('leaderboardContainer').classList.add('show');
+            }
+            return;
+        }
+        
+        const sk = document.getElementById('lbSkeleton');
+        const container = document.getElementById('leaderboardContainer');
+        const grid = document.getElementById('leaderboardGrid');
+        
+        sk.classList.add('show');
+        container.classList.remove('show');
+
+        fetch('/api/leaderboard')
+            .then(res => res.json())
+            .then(res => {
+                if(res.status === 'success' && res.data.length > 0) {
+                    grid.innerHTML = res.data.map((item, idx) => `
+                        <div class="rank-card" data-rank="${idx + 1}" onclick="fillAndGenerateTopic('${item.discipline}')">
+                            <div class="rank-header">
+                                <h3 class="rank-disc-name">${item.discipline}</h3>
+                                <div class="rank-heat"><i class="fas fa-fire"></i> ${item.total_heat.toLocaleString()}</div>
+                            </div>
+                            <div class="rank-words">
+                                ${item.top_words.map(w => `<span class="rank-word-tag" onclick="event.stopPropagation(); fillAndGenerateTopic('${w}')">${w}</span>`).join('')}
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                    setTimeout(() => {
+                        sk.classList.remove('show');
+                        container.classList.add('show');
+                        isLeaderboardLoaded = true;
+                    }, 400); 
+                }
+            })
+            .catch(err => {
+                sk.classList.remove('show');
+                console.error("排行榜加载失败", err);
+            });
+    }
+
+    function fillAndGenerateTopic(word) {
+        document.getElementById('topicInput').value = word;
+        generateTopics();
+    }
+
+    function resetToLeaderboard() {
+        document.getElementById('topicResultsArea').style.display = 'none';
+        document.getElementById('topicCardsContainer').innerHTML = '';
+        document.getElementById('topicInput').value = '';
+        document.getElementById('leaderboardContainer').classList.add('show');
     }
 
     const searchInput = document.getElementById('searchInput');
@@ -695,6 +797,7 @@
     function executeSearch(directQuery = null) {
         const query = directQuery || searchInput.value.trim();
         if(!query) return;
+        
         document.getElementById('insightDrawer').classList.add('open');
         document.getElementById('drawerTitle').innerHTML = `<i class="fas fa-circle-notch fa-spin" style="color:var(--accent); font-size:1.2rem; margin-right:12px;"></i> 数据下钻解析中...`;
         
@@ -727,12 +830,24 @@
         const c = getEChartsColors();
         charts.radar.setOption({
             tooltip: { backgroundColor: c.tooltipBg, borderColor: c.tooltipBorder, textStyle: { color: c.textTitle }, extraCssText: 'backdrop-filter: blur(10px); border-radius: 8px;' },
-            radar: { indicator: currentRadarData.map(i => ({ name: i.name, max: i.max })), splitArea: { show: false }, axisLine: { lineStyle: { color: c.borderLight } }, splitLine: { lineStyle: { color: c.border } }, axisName: { color: c.textSec, fontWeight: 500 } },
+            // ✨ 修复点1：缩小雷达图半径 (radius: '60%')，防止两侧较长的英文单词被容器截断
+            radar: { 
+                radius: '60%',
+                center: ['50%', '55%'],
+                indicator: currentRadarData.map(i => ({ name: i.name, max: i.max })), 
+                splitArea: { show: false }, 
+                axisLine: { lineStyle: { color: c.borderLight } }, 
+                splitLine: { lineStyle: { color: c.border } }, 
+                axisName: { color: c.textSec, fontWeight: 500 } 
+            },
             series: [{ type: 'radar', data: [{ value: currentRadarData.map(i => i.value), name: currentDisciplineName, areaStyle: { color: 'rgba(0, 122, 255, 0.15)' }, lineStyle: { color: '#007AFF', width: 2 }, itemStyle: { color: '#007AFF' } }] }]
         });
     }
 
-    function closeDrawer() { document.getElementById('insightDrawer').classList.remove('open'); }
+    function closeDrawer() { 
+        document.getElementById('insightDrawer').classList.remove('open'); 
+    }
+    
     function updateYearDisplay(val) { document.getElementById('yearLabel').innerText = val; }
 
     function loadFPNetworkByYear(year) {
@@ -763,7 +878,29 @@
             color: ['#007AFF', '#5AC8FA'],
             tooltip: { backgroundColor: c.tooltipBg, borderColor: c.tooltipBorder, textStyle: { color: c.textTitle }, extraCssText: 'backdrop-filter: blur(10px); border-radius: 8px;' },
             legend: { textStyle: { color: c.textSec, fontWeight: 500 }, bottom: 0, icon: 'circle' },
-            series: [{ type: 'graph', layout: 'force', data: nodes, links: links, categories: categories, roam: true, label: { show: true, position: 'right', formatter: '{b}', color: c.textTitle, fontSize: 11, fontWeight: 500 }, force: { repulsion: 700, edgeLength: [50, 160], gravity: 0.1 }, lineStyle: { color: c.border, curveness: 0.2, width: 1 } }]
+            series: [{ 
+                type: 'graph', 
+                layout: 'force', 
+                data: nodes, 
+                links: links, 
+                categories: categories, 
+                roam: true, 
+                label: { show: true, position: 'right', formatter: '{b}', color: c.textTitle, fontSize: 11, fontWeight: 500 }, 
+                force: { repulsion: 700, edgeLength: [50, 160], gravity: 0.1 }, 
+                lineStyle: { 
+                    color: 'source',  
+                    opacity: 0.9,     
+                    curveness: 0.2, 
+                    width: 2.5        
+                },
+                emphasis: {
+                    focus: 'adjacency', 
+                    lineStyle: {
+                        width: 5,        
+                        opacity: 1      
+                    }
+                }
+            }]
         }, true);
     }
 
@@ -788,22 +925,72 @@
         });
     }
 
-    // ✨ 高级重绘：赋予 ThemeRiver 图表留白缝隙和极光配色
     function renderRiverChart() {
-        if(!currentRiverData) return;
+        if(!currentRiverData || currentRiverData.length === 0) return;
+
+        let yearSet = new Set();
+        let wordSet = new Set();
+        let dataMap = {}; 
+
+        currentRiverData.forEach(item => {
+            let y = item[0];
+            let count = item[1];
+            let word = item[2];
+            yearSet.add(y);
+            wordSet.add(word);
+            if(!dataMap[word]) dataMap[word] = {};
+            dataMap[word][y] = count;
+        });
+
+        // ✨ 修复点：强制将 2026 加入数轴，触发后方循环中的预测值（lastKnownVal * 0.9）计算
+        yearSet.add('2026-01-01');
+
+        let sortedYears = Array.from(yearSet).sort();
+        let minYear = sortedYears[0];
+        let maxYear = sortedYears[sortedYears.length - 1]; 
+
+        let alignedData = [];
+        wordSet.forEach(word => {
+            let lastKnownVal = 0; 
+            
+            sortedYears.forEach(y => {
+                if (dataMap[word][y] !== undefined) {
+                    lastKnownVal = dataMap[word][y]; 
+                } else {
+                    lastKnownVal = Math.max(3, Math.floor(lastKnownVal * 0.9)); 
+                }
+                alignedData.push([y, lastKnownVal, word]);
+            });
+        });
+
         const c = getEChartsColors();
         charts.river.setOption({ 
-            color: premiumColors, // 使用更协调的极光冷色系
+            color: premiumColors, 
             tooltip: { trigger: 'axis', backgroundColor: c.tooltipBg, borderColor: c.tooltipBorder, textStyle: { color: c.textTitle }, extraCssText: 'backdrop-filter: blur(10px); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);' }, 
-            singleAxis: { type: 'time', top: 30, bottom: 40, axisLabel: { color: c.textSec, fontWeight: 500 }, splitLine: { show: true, lineStyle: { color: c.borderLight, type: 'dashed' } }, axisLine: { lineStyle: { color: c.border } } }, 
+            singleAxis: { 
+                type: 'time', 
+                min: minYear,
+                max: maxYear, 
+                boundaryGap: false, 
+                top: 30, 
+                bottom: 40, 
+                axisLabel: { 
+                    color: c.textSec, 
+                    fontWeight: 500,
+                    formatter: '{yyyy}',
+                    showMaxLabel: true // ✨ 增加此配置，强制显示坐标轴最右侧（最大值）的标签
+                }, 
+                splitLine: { show: true, lineStyle: { color: c.borderLight, type: 'dashed' } }, 
+                axisLine: { lineStyle: { color: c.border } } 
+            }, 
             series: [{ 
                 type: 'themeRiver', 
-                data: currentRiverData, 
+                data: alignedData,  
                 emphasis: { focus: 'series' }, 
                 itemStyle: { 
-                    opacity: 0.75, // 降低透明度提升质感
-                    borderWidth: 1.5, // 开启河流边框
-                    borderColor: c.bgBase // 边框颜色设为背景色，形成惊艳的“留白切割”效果
+                    opacity: 0.75, 
+                    borderWidth: 1.5, 
+                    borderColor: c.bgBase 
                 } 
             }] 
         }, true);
@@ -886,15 +1073,19 @@
         const btn = document.getElementById('btnGenerate');
         const btnText = document.getElementById('btnGenText');
         const btnLoader = document.getElementById('btnGenLoader');
-        const resultsArea = document.getElementById('topicCardsContainer');
-        const emptyState = document.getElementById('topicEmptyState');
+        const resultsArea = document.getElementById('topicResultsArea');
+        const cardsContainer = document.getElementById('topicCardsContainer');
 
         btn.disabled = true;
         btnText.style.display = 'none';
         btnLoader.style.display = 'inline-flex';
-        emptyState.style.display = 'none';
+        
+        // 生成选题时，隐藏默认的排行榜，展示结果区域
+        document.getElementById('leaderboardContainer').classList.remove('show');
+        document.getElementById('lbSkeleton').classList.remove('show');
+        resultsArea.style.display = 'block';
 
-        resultsArea.innerHTML = `
+        cardsContainer.innerHTML = `
             <div class="terminal-loader" id="termLoader">
                 <div class="terminal-line"><span class="term-blue">[Cerebro OS]</span> 初始化本地推理引擎...</div>
                 <div class="terminal-line" style="animation-delay: 0.5s"><span class="term-purple">[Spark Graph]</span> 正在全库遍历词条: '${inputStr}'</div>
@@ -916,7 +1107,7 @@
         .then(res => {
             setTimeout(() => {
                 if(res.status === 'success') {
-                    resultsArea.innerHTML = res.data.map((item, index) => `
+                    cardsContainer.innerHTML = res.data.map((item, index) => `
                         <div class="topic-card" style="animation-delay: ${index * 0.15}s;">
                             <div class="topic-title-row">
                                 <i class="fas fa-file-alt"></i> 
@@ -939,7 +1130,7 @@
                         </div>
                     `).join('');
                 } else {
-                    resultsArea.innerHTML = `<p style="text-align:center; color: var(--error-red); padding: 40px;">引擎推演失败：${res.message}</p>`;
+                    cardsContainer.innerHTML = `<p style="text-align:center; color: var(--error-red); padding: 40px;">引擎推演失败：${res.message}</p>`;
                 }
                 
                 btn.disabled = false;
@@ -948,7 +1139,7 @@
             }, 3200); 
         })
         .catch(err => {
-            resultsArea.innerHTML = `<p style="text-align:center; color: var(--error-red); padding: 40px;">网络请求异常，Spark 引擎未响应。</p>`;
+            cardsContainer.innerHTML = `<p style="text-align:center; color: var(--error-red); padding: 40px;">网络请求异常，Spark 引擎未响应。</p>`;
             btn.disabled = false;
             btnText.style.display = 'inline-block';
             btnLoader.style.display = 'none';
